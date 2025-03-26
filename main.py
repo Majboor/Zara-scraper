@@ -66,6 +66,19 @@ SITEMAP_FILE = 'sitemap-product-us-en.xml'
 PAGE_LOAD_TIMEOUT = 60  # Increased from 30 to 60 seconds
 ELEMENT_WAIT_TIMEOUT = 45  # Separate timeout for element waiting
 
+# Add at the top with other imports
+import threading
+
+# Add after the constants
+# Thread-safe locks
+csv_lock = threading.Lock()
+completed_lock = threading.Lock()
+processed_count = 0
+
+# Add error handling constants
+MAX_RETRIES = 3
+RETRY_DELAYS = [5, 10, 20]  # Increasing delays between retries
+
 def fetch_zara_product_info_selenium(url, retry_count=0):
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -74,6 +87,8 @@ def fetch_zara_product_info_selenium(url, retry_count=0):
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--window-size=1920,1080')
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    chrome_options.add_argument('--disable-extensions')  # Added for stability
+    chrome_options.add_argument('--disable-logging')     # Reduce logging
     
     try:
         service = Service(ChromeDriverManager().install())
@@ -83,8 +98,11 @@ def fetch_zara_product_info_selenium(url, retry_count=0):
         # Add random delay between requests
         time.sleep(random.uniform(*RANDOM_DELAY_RANGE))
         
+        # Clear cache and cookies
+        driver.delete_all_cookies()
+        
         driver.get(url)
-
+        
         # Wait for initial page load
         WebDriverWait(driver, ELEMENT_WAIT_TIMEOUT).until(
             EC.presence_of_element_located((By.ID, 'app-root'))
@@ -104,23 +122,36 @@ def fetch_zara_product_info_selenium(url, retry_count=0):
         product_info['product_title'] = title_tag.get_text(strip=True) if title_tag else ''
         product_info['short_description'] = soup.find('meta', {'name': 'description'})['content'] if soup.find('meta', {'name': 'description'}) else ''
 
-        # Get price
+        # Get price - Updated selector
         price_element = soup.find('span', class_='price-current__amount')
         if price_element:
-            price_wrapper = price_element.find('div', class_='money-amount price-formatted__price-amount')
-            if price_wrapper:
-                price_main = price_wrapper.find('span', class_='money-amount__main')
-                if price_main:
-                    product_info['price'] = price_main.get_text(strip=True)
+            money_amount = price_element.find('div', class_='money-amount')
+            if money_amount:
+                main_amount = money_amount.find('span', class_='money-amount__main')
+                if main_amount:
+                    product_info['price'] = main_amount.get_text(strip=True)
 
-        # Get product description with multiple fallbacks
-        description_element = soup.find('div', class_='product-detail-description product-detail-info__description')
-        if not description_element:
-            description_element = soup.find('div', class_='product-detail-info__description')
-        if not description_element:
-            description_element = soup.find('div', class_='product-detail-info__header')
+        # Get product description - Updated selectors
+        description_element = None
+        description_selectors = [
+            'div.product-detail-description.product-detail-info__description p',
+            'div.expandable-text__inner-content p',
+            'div.product-detail-info__header-content h1'
+        ]
+        
+        for selector in description_selectors:
+            description_element = soup.select_one(selector)
+            if description_element:
+                break
         
         product_info['description'] = description_element.get_text(strip=True) if description_element else ''
+
+        # Get product title - Updated selector
+        title_element = soup.find('h1', class_='product-detail-info__header-name')
+        if title_element:
+            product_info['product_title'] = title_element.get_text(strip=True)
+        elif title_tag:  # Fallback to existing title tag
+            product_info['product_title'] = title_tag.get_text(strip=True)
 
         # Enhanced image extraction with multiple selectors
         images = []
