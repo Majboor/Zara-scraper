@@ -108,26 +108,34 @@ def fetch_zara_product_info_selenium(url, retry_count=0):
                 if price_main:
                     product_info['price'] = price_main.get_text(strip=True)
 
-        # Get product description
-        description_element = soup.find('div', class_='product-detail-info__header')
+        # Get product description - Updated selector
+        description_element = soup.find('div', class_='product-detail-description product-detail-info__description')
         if description_element:
             product_info['description'] = description_element.get_text(strip=True)
+        else:
+            # Fallback to header if detailed description not found
+            header_desc = soup.find('div', class_='product-detail-info__header')
+            if header_desc:
+                product_info['description'] = header_desc.get_text(strip=True)
 
-        # Images
+        # Images - Enhanced extraction
         images = []
+        # Try picture tags first
         picture_sources = soup.select('picture.media-image source')
         for source_tag in picture_sources:
             srcset = source_tag.get('srcset', '')
             for item in srcset.split(','):
                 url_part = item.strip().split(' ')[0]
-                if url_part and 'w=1500' in url_part:  # Only get high-res images
+                if url_part and 'w=1500' in url_part:
                     images.append(url_part)
 
-        img_tags = soup.find_all('img', class_=lambda c: c and 'media-image__image' in c)
-        for img_tag in img_tags:
-            src = img_tag.get('src', '')
-            if src and 'w=1500' in src:  # Only get high-res images
-                images.append(src)
+        # If no images found, try alternate image tags
+        if not images:
+            img_tags = soup.find_all('img', class_='product-media__image')
+            for img in img_tags:
+                src = img.get('src', '')
+                if src and 'w=1500' in src:
+                    images.append(src)
 
         # Remove duplicates and filter out transparent background
         images = [img for img in list(set(images)) 
