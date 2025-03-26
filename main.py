@@ -113,49 +113,58 @@ def fetch_zara_product_info_selenium(url, retry_count=0):
                 if price_main:
                     product_info['price'] = price_main.get_text(strip=True)
 
-        # Get product description - Updated selector
+        # Get product description with multiple fallbacks
         description_element = soup.find('div', class_='product-detail-description product-detail-info__description')
-        if description_element:
-            product_info['description'] = description_element.get_text(strip=True)
-        else:
-            # Fallback to header if detailed description not found
-            header_desc = soup.find('div', class_='product-detail-info__header')
-            if header_desc:
-                product_info['description'] = header_desc.get_text(strip=True)
+        if not description_element:
+            description_element = soup.find('div', class_='product-detail-info__description')
+        if not description_element:
+            description_element = soup.find('div', class_='product-detail-info__header')
+        
+        product_info['description'] = description_element.get_text(strip=True) if description_element else ''
 
-        # Images - Enhanced extraction
+        # Enhanced image extraction with multiple selectors
         images = []
         # Try picture tags first
-        picture_sources = soup.select('picture.media-image source')
+        picture_sources = soup.select('picture.media-image source, picture source[srcset]')
         for source_tag in picture_sources:
             srcset = source_tag.get('srcset', '')
             for item in srcset.split(','):
                 url_part = item.strip().split(' ')[0]
-                if url_part and 'w=1500' in url_part:
+                if url_part and ('w=1500' in url_part or 'w=1920' in url_part):
                     images.append(url_part)
 
-        # If no images found, try alternate image tags
+        # Try multiple image selectors if needed
         if not images:
-            img_tags = soup.find_all('img', class_='product-media__image')
-            for img in img_tags:
-                src = img.get('src', '')
-                if src and 'w=1500' in src:
-                    images.append(src)
+            img_selectors = [
+                'img.product-media__image',
+                'img.media-image__image',
+                'img[data-role="product-image"]'
+            ]
+            for selector in img_selectors:
+                img_tags = soup.select(selector)
+                for img in img_tags:
+                    src = img.get('src', '')
+                    if src and ('w=1500' in src or 'w=1920' in src):
+                        images.append(src)
+                if images:
+                    break
 
-        # Remove duplicates and filter out transparent background
+        # Process and deduplicate images
         images = [img for img in list(set(images)) 
-                 if 'transparent-background' not in img]
+                 if 'transparent-background' not in img 
+                 and not img.endswith('.gif')]
         
-        # Take only unique image IDs (remove size variants)
+        # Take only unique image IDs with better URL handling
         unique_images = []
         seen_ids = set()
         for img in images:
-            img_id = img.split('?')[0]  # Get base URL without parameters
+            # Handle both query params and path-based identifiers
+            img_id = img.split('?')[0].split('/')[-1]
             if img_id not in seen_ids:
                 seen_ids.add(img_id)
                 unique_images.append(img)
 
-        product_info['images'] = '|'.join(unique_images[:5])  # Limit to 5 unique images
+        product_info['images'] = '|'.join(unique_images[:5])
 
         driver.quit()
         return product_info, url
