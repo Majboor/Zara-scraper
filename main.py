@@ -62,6 +62,10 @@ CSV_HEADERS = ['brand', 'location', 'product_title', 'short_description', 'price
 SITEMAP_FILE = 'sitemap-product-us-en.xml'
 
 # Update product info in fetch function
+# Add to constants at the top
+PAGE_LOAD_TIMEOUT = 60  # Increased from 30 to 60 seconds
+ELEMENT_WAIT_TIMEOUT = 45  # Separate timeout for element waiting
+
 def fetch_zara_product_info_selenium(url, retry_count=0):
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -72,21 +76,22 @@ def fetch_zara_product_info_selenium(url, retry_count=0):
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
     try:
-        # Create a Service object using ChromeDriverManager
         service = Service(ChromeDriverManager().install())
-        
-        # Initialize the Chrome driver with the service and options parameters
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(30)
+        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
         
         # Add random delay between requests
         time.sleep(random.uniform(*RANDOM_DELAY_RANGE))
         
         driver.get(url)
 
-        WebDriverWait(driver, 30).until(
+        # Wait for initial page load
+        WebDriverWait(driver, ELEMENT_WAIT_TIMEOUT).until(
             EC.presence_of_element_located((By.ID, 'app-root'))
         )
+
+        # Additional wait for dynamic content
+        time.sleep(2)  # Short pause to let dynamic content load
 
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         product_info = {
