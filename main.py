@@ -63,53 +63,91 @@ SITEMAP_FILE = 'sitemap-product-us-en.xml'
 
 # Update product info in fetch function
 # Add to constants at the top
-PAGE_LOAD_TIMEOUT = 60  # Increased from 30 to 60 seconds
-ELEMENT_WAIT_TIMEOUT = 45  # Separate timeout for element waiting
-
-# Add at the top with other imports
-import threading
-
-# Add after the constants
-# Thread-safe locks
-csv_lock = threading.Lock()
-completed_lock = threading.Lock()
-processed_count = 0
-
-# Add error handling constants
-MAX_RETRIES = 3
-RETRY_DELAYS = [5, 10, 20]  # Increasing delays between retries
+PAGE_LOAD_TIMEOUT = 90  # Increased from 60 to 90 seconds
+ELEMENT_WAIT_TIMEOUT = 60  # Increased from 45 to 60 seconds
+SCRIPT_TIMEOUT = 60  # Add script timeout
 
 def fetch_zara_product_info_selenium(url, retry_count=0):
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--window-size=1920,1080')
-    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    chrome_options.add_argument('--disable-extensions')  # Added for stability
-    chrome_options.add_argument('--disable-logging')     # Reduce logging
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36')
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    options.add_argument('--disable-blink-features=AutomationControlled')
     
     try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(options=options)
         driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
         
         # Add random delay between requests
         time.sleep(random.uniform(*RANDOM_DELAY_RANGE))
+        driver.get(url)
+
+        wait = WebDriverWait(driver, ELEMENT_WAIT_TIMEOUT)
+
+        # Handle geolocation popup if it appears
+        try:
+            geolocation_button = wait.until(
+                EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, "button[data-qa-action='stay-in-store']")
+                )
+            )
+            geolocation_button.click()
+            time.sleep(2)
+        except Exception as e:
+            print(f"Geolocation button not found: {str(e)}")
+
+        # Wait for main content and scroll
+        wait.until(EC.presence_of_element_located((By.ID, 'app-root')))
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(3)
+        driver.execute_script("window.scrollTo(0, 0);")
+
+        # Wait for price element
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "span.price-current__amount")))
+        except Exception as e:
+            driver.save_screenshot(f"debug_{url.split('/')[-1]}.png")
+            print(f"Price element not found, screenshot saved")
+
+        # Rest of the parsing code remains the same...
         
         # Clear cache and cookies
         driver.delete_all_cookies()
         
-        driver.get(url)
-        
-        # Wait for initial page load
-        WebDriverWait(driver, ELEMENT_WAIT_TIMEOUT).until(
-            EC.presence_of_element_located((By.ID, 'app-root'))
-        )
+        try:
+            driver.get(url)
+        except Exception as e:
+            print(f"Initial page load failed: {str(e)}")
+            if 'driver' in locals():
+                driver.quit()
+            return None, url
 
-        # Additional wait for dynamic content
-        time.sleep(2)  # Short pause to let dynamic content load
+        # Wait for initial page load with multiple conditions
+        try:
+            WebDriverWait(driver, ELEMENT_WAIT_TIMEOUT).until(
+                EC.presence_of_element_located((By.ID, 'app-root'))
+            )
+            
+            # Additional waits for key elements
+            WebDriverWait(driver, ELEMENT_WAIT_TIMEOUT).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'product-detail-info'))
+            )
+            
+            # Scroll to ensure dynamic content loads
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"Wait for elements failed: {str(e)}")
+            if 'driver' in locals():
+                driver.quit()
+            return None, url
 
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         product_info = {
@@ -206,6 +244,15 @@ def fetch_zara_product_info_selenium(url, retry_count=0):
             driver.quit()
         return None, url
 
+# Add at the top with other imports and before any function definitions
+import threading
+
+# Global variables and locks
+csv_lock = threading.Lock()
+completed_lock = threading.Lock()
+processed_count = 0
+
+# Remove the duplicate process_url function and keep only one version
 def process_url(url):
     max_attempts = 3
     for attempt in range(max_attempts):
