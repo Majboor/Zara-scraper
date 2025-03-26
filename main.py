@@ -21,6 +21,8 @@ CSV_FILE = 'zara_products.csv'
 COMPLETED_URLS_FILE = 'completed_urls.txt'
 CSV_HEADERS = ['brand', 'location', 'product_title', 'short_description', 'price', 'description', 'images']
 SITEMAP_FILE = 'sitemap-product-us-en.xml'
+RANDOM_DELAY_RANGE = (2, 7)  # Add this line for random delay between requests
+RETRY_DELAY = 5  # Add this line for retry delay
 
 def get_urls_from_sitemap():
     try:
