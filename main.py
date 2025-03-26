@@ -14,7 +14,7 @@ import queue
 from urllib.parse import urlparse
 import threading
 import xml.etree.ElementTree as ET
-
+import random
 # Constants
 MAX_THREADS = 10
 CSV_FILE = 'zara_products.csv'
