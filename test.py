@@ -29,14 +29,15 @@ def get_product_info(url):
         # --- CLICK THE "YES, STAY ON UNITED STATES" BUTTON IF IT APPEARS ---
         try:
             geolocation_button = wait.until(
-                EC.element_to_be_clickable(
+                EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "button[data-qa-action='stay-in-store']")
                 )
             )
-            geolocation_button.click()
-            time.sleep(2)  # Allow time for the page to update after clicking
+            if geolocation_button.is_displayed() and geolocation_button.is_enabled():
+                geolocation_button.click()
+                time.sleep(2)  # Allow time for the page to update after clicking
         except Exception as e:
-            print("Geolocation button not found or not clickable:", e)
+            print("Geolocation button not found, continuing without clicking")
         
         # --- SCROLL DOWN to help trigger lazy-loaded content ---
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -116,6 +117,6 @@ def get_product_info(url):
         driver.quit()
 
 if __name__ == "__main__":
-    url = "https://www.zara.com/us/en/combination-skirt-limited-edition-p01966917.html"
+    url = "https://www.zara.com/us/en/tie-front-crop-top-p03644160.html"
     info = get_product_info(url)
     print(info)
